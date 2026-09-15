@@ -1,142 +1,178 @@
-import sys
 import os
+import datetime
 import hashlib
-from datetime import datetime
+from .database import engine, Base, SessionLocal
+from .models import User, Case, Entity, Relationship, Location, LocationNode, SpatialEvent, ChainOfCustodyLog
+from .auth import get_password_hash
+from .neo4j_service import neo4j_service
 
-from database import engine, Base, SessionLocal
-from models import (
-    User, Case, Document, LocationNode, SpatialEvent, ReviewItem,
-    ChainOfCustodyLog, Entity, Relationship, Location
-)
-from auth import hash_password
-
-def init_db():
-    print("[CIPHER DB INIT] Creating all tables...")
+def init_database():
+    print("[CIPHER] Initializing database tables...")
     Base.metadata.create_all(bind=engine)
-    print("[CIPHER DB INIT] Tables created successfully.")
-
+    
     db = SessionLocal()
     try:
-        # Check if baseline user exists
-        user_count = db.query(User).count()
-        if user_count == 0:
-            print("[CIPHER DB INIT] Seeding initial admin and investigator users...")
+        # Check if admin user exists
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if not admin_user:
             admin_user = User(
-                full_name="Chief Intelligence Officer",
-                email="admin@cipher.intel",
-                password_hash=hash_password("CipherAdmin2026!"),
+                username="admin",
+                email="admin@cipher.internal",
+                password_hash=get_password_hash("Admin@123"),
+                full_name="Cipher Director / Lead Admin",
                 role="ADMIN"
             )
-            investigator_user = User(
-                full_name="Lead Investigator",
-                email="investigator@cipher.intel",
-                password_hash=hash_password("Investigator2026!"),
-                role="INVESTIGATOR"
-            )
             db.add(admin_user)
-            db.add(investigator_user)
             db.commit()
             db.refresh(admin_user)
-            db.refresh(investigator_user)
-            admin_id = admin_user.id
-            investigator_id = investigator_user.id
-        else:
-            first_user = db.query(User).first()
-            admin_id = first_user.id
-            investigator_id = first_user.id
+            print("[CIPHER] Created default administrator: admin / Admin@123")
 
-        # Check if baseline case exists
-        case_count = db.query(Case).count()
-        if case_count == 0:
-            print("[CIPHER DB INIT] Seeding baseline Case #CN-2026-0143 (Falcon-77 Smuggling Ring)...")
-            case = Case(
-                id=1,
-                case_number="CN-2026-0143",
-                title="Operation Falcon-77: Gold & Narcotics Syndicate",
-                description="Cross-border illicit gold smuggling and communications network operating across Mumbai Metropolitan Region.",
-                status="OPEN",
-                priority="HIGH",
-                created_by=admin_id
+        # Check if investigator user exists
+        inv_user = db.query(User).filter(User.username == "investigator").first()
+        if not inv_user:
+            inv_user = User(
+                username="investigator",
+                email="investigator@cipher.internal",
+                password_hash=get_password_hash("Investigator@123"),
+                full_name="Senior Special Agent",
+                role="INVESTIGATOR"
             )
-            db.add(case)
+            db.add(inv_user)
             db.commit()
+            db.refresh(inv_user)
+            print("[CIPHER] Created default investigator: investigator / Investigator@123")
+
+        # Check if Case 1 exists
+        sample_case = db.query(Case).filter(Case.id == 1).first()
+        if not sample_case:
+            sample_case = Case(
+                id=1,
+                title="Falcon-77 Smuggling Ring",
+                case_number="CN-2026-0143",
+                description="Cross-border contraband and hawala laundering syndicate operating across Mumbai, Nhava Sheva Docks, and Bhiwandi warehousing corridors.",
+                status="ACTIVE",
+                priority="CRITICAL",
+                lead_investigator="Director Vikram Seth",
+                user_id=admin_user.id
+            )
+            db.add(sample_case)
+            db.commit()
+            db.refresh(sample_case)
+            print("[CIPHER] Seeded primary case #CN-2026-0143")
 
             # Seed Entities
             entities_data = [
-                {"id": 1, "type": "PERSON", "label": "Tariq Falcon", "aliases": "The Falcon, Chief Operative", "lat": 18.9438, "lng": 72.8358},
-                {"id": 2, "type": "PERSON", "label": "Vikram Seth", "aliases": "The Fixer, Logistics Lead", "lat": 19.0760, "lng": 72.8777},
-                {"id": 3, "type": "PHONE", "label": "+91 98200 11223", "aliases": "Burner SIM #1", "lat": 18.9500, "lng": 72.8400},
-                {"id": 4, "type": "VEHICLE", "label": "MH-04-AZ-9988", "aliases": "Black Scorpio Escort", "lat": 19.0178, "lng": 72.8478},
-                {"id": 5, "type": "LOCATION", "label": "Kucha Mahajani Gold Vault", "aliases": "Central Safehouse", "lat": 18.9515, "lng": 72.8310},
-                {"id": 6, "type": "ORGANISATION", "label": "Apex Bullion Exports Pvt Ltd", "aliases": "Front Company", "lat": 19.0600, "lng": 72.8300},
-                {"id": 7, "type": "ACCOUNT", "label": "HDFC-8899-3321", "aliases": "Layering Escrow", "lat": 18.9300, "lng": 72.8300}
+                {"id": "ent-1", "name": "Tariq 'Falcon' Mansoor", "type": "PERSON", "role": "Syndicate Kingpin", "confidence": 0.98, "aliases": "Falcon, The Eagle", "latitude": 18.9220, "longitude": 72.8347},
+                {"id": "ent-2", "name": "Bilal 'Cargo' Qureshi", "type": "PERSON", "role": "Logistics Coordinator", "confidence": 0.94, "aliases": "B-Cargo", "latitude": 18.9500, "longitude": 72.8450},
+                {"id": "ent-3", "name": "White Scorpio MH-04-AZ-9981", "type": "VEHICLE", "role": "Smuggling Transport", "confidence": 0.96, "aliases": "Scorpio-9981", "latitude": 19.0176, "longitude": 72.8561},
+                {"id": "ent-4", "name": "Nhava Sheva Dock Yard B-4", "type": "LOCATION", "role": "Primary Offload Hub", "confidence": 0.99, "aliases": "JNPT Pier 4", "latitude": 18.9502, "longitude": 72.9515},
+                {"id": "ent-5", "name": "Bhiwandi Textile Godown 12", "type": "LOCATION", "role": "Stash Warehouse", "confidence": 0.92, "aliases": "Godown-12", "latitude": 19.2970, "longitude": 73.0630},
+                {"id": "ent-6", "name": "+91 98201 55432", "type": "PHONE", "role": "Burner Device A", "confidence": 0.95, "aliases": "Burner-A", "latitude": 18.9320, "longitude": 72.8310},
+                {"id": "ent-7", "name": "+91 98201 88765", "type": "PHONE", "role": "Burner Device B", "confidence": 0.91, "aliases": "Burner-B", "latitude": 18.9410, "longitude": 72.8390},
+                {"id": "ent-8", "name": "Apex Bullion Trading Ltd", "type": "ORGANIZATION", "role": "Hawala Shell Entity", "confidence": 0.97, "aliases": "Apex Bullion", "latitude": 18.9535, "longitude": 72.8322},
+                {"id": "ent-9", "name": "HDFC Escrow AC #992819", "type": "FINANCIAL", "role": "Laundering Conduit", "confidence": 0.95, "aliases": "Escrow-992819", "latitude": 18.9315, "longitude": 72.8318},
             ]
 
-            for ed in entities_data:
-                e = Entity(
-                    id=ed["id"],
+            for idx, e in enumerate(entities_data, 1):
+                entity_obj = Entity(
+                    id=idx,
                     case_id=1,
-                    entity_type=ed["type"],
-                    label=ed["label"],
-                    aliases=ed["aliases"],
-                    confidence_score=0.95,
+                    label=e["name"],
+                    entity_type=e["type"],
+                    confidence_score=e["confidence"],
+                    aliases=e["aliases"],
+                    latitude=e["latitude"],
+                    longitude=e["longitude"],
+                    verification_status="verified"
+                )
+                db.add(entity_obj)
+                # Also add to location table if it has coordinates
+                if e["latitude"] and e["longitude"]:
+                    loc = Location(
+                        case_id=1,
+                        label=e["name"],
+                        location_type=e["type"],
+                        latitude=e["latitude"],
+                        longitude=e["longitude"],
+                        address_text="Mumbai Metropolitan Region",
+                        verification_status="verified"
+                    )
+                    db.add(loc)
+                    loc_node = LocationNode(
+                        case_id=1,
+                        name=e["name"],
+                        latitude=e["latitude"],
+                        longitude=e["longitude"],
+                        location_type=e["type"]
+                    )
+                    db.add(loc_node)
+
+            db.commit()
+
+            # Seed Relationships (map ent-1 -> 1, ent-2 -> 2 etc.)
+            relationships_data = [
+                {"id": 1, "source_id": 1, "target_id": 2, "type": "COMMANDS", "confidence": 0.95, "sentence": "Intercepted wiretap indicates Tariq Mansoor instructing Bilal Qureshi on dock arrivals."},
+                {"id": 2, "source_id": 1, "target_id": 6, "type": "USES_PHONE", "confidence": 0.99, "sentence": "Tower sector dumps link Mansoor's residence to burner MSISDN +91 98201 55432."},
+                {"id": 3, "source_id": 2, "target_id": 7, "type": "USES_PHONE", "confidence": 0.97, "sentence": "CDR analysis links Bilal Qureshi with IMEI registration for burner MSISDN +91 98201 88765."},
+                {"id": 4, "source_id": 6, "target_id": 7, "type": "CALLS", "confidence": 0.98, "sentence": "42 encrypted call handshakes recorded between Burner A and Burner B prior to shipment."},
+                {"id": 5, "source_id": 2, "target_id": 3, "type": "DRIVES", "confidence": 0.93, "sentence": "Toll plaza ANPR cameras captured Qureshi behind the wheel of Scorpio MH-04-AZ-9981."},
+                {"id": 6, "source_id": 3, "target_id": 4, "type": "TRANSIT_TO", "confidence": 0.96, "sentence": "Vehicle registered entering JNPT Pier 4 cargo gate at 02:14 AM."},
+                {"id": 7, "source_id": 3, "target_id": 5, "type": "TRANSIT_TO", "confidence": 0.94, "sentence": "Scorpio observed unloading sealed crates at Bhiwandi Godown-12."},
+                {"id": 8, "source_id": 1, "target_id": 8, "type": "BENEFICIAL_OWNER", "confidence": 0.97, "sentence": "Corporate registrar filings confirm Tariq Mansoor holds 85% equity in Apex Bullion."},
+                {"id": 9, "source_id": 8, "target_id": 9, "type": "TRANSFERS_TO", "confidence": 0.98, "sentence": "Layered wire transfers totaling INR 3.85 Cr routed into escrow AC #992819."}
+            ]
+
+            for r in relationships_data:
+                rel_obj = Relationship(
+                    id=r["id"],
+                    case_id=1,
+                    source_entity_id=r["source_id"],
+                    target_entity_id=r["target_id"],
+                    relationship_type=r["type"],
+                    confidence_score=r["confidence"],
+                    evidence_sentence=r["sentence"],
                     verification_status="verified",
-                    latitude=ed["lat"],
-                    longitude=ed["lng"]
+                    reviewed_by="admin"
                 )
-                db.add(e)
+                db.add(rel_obj)
+
+            # Seed Chain of Custody Initial Entry
+            genesis_hash = hashlib.sha256(b"CIPHER_GENESIS_BLOCK_FALCON_77").hexdigest()
+            log_entry = ChainOfCustodyLog(
+                case_id=1,
+                action="CASE_INITIALIZED",
+                performed_by="Director Vikram Seth",
+                hash_value=genesis_hash,
+                previous_hash="0" * 64,
+                details="Cryptographic genesis entry for Case #CN-2026-0143."
+            )
+            db.add(log_entry)
             db.commit()
+            print("[CIPHER] Seeded entities, relationships, locations, and genesis chain log.")
 
-            # Seed Relationships
-            rels_data = [
-                {"src": 1, "tgt": 2, "type": "COMMANDS", "evidence": "Tariq Falcon instructed Vikram Seth on shipping routes."},
-                {"src": 1, "tgt": 3, "type": "USES_PHONE", "evidence": "Intercepted call logs show Tariq Falcon using burner SIM +91 98200 11223."},
-                {"src": 2, "tgt": 4, "type": "DRIVES", "evidence": "ANPR cameras registered Vikram Seth operating Black Scorpio MH-04-AZ-9988."},
-                {"src": 4, "tgt": 5, "type": "TRANSIT_TO", "evidence": "Scorpio observed delivering sealed consignments to Kucha Mahajani Vault."},
-                {"src": 1, "tgt": 6, "type": "BENEFICIAL_OWNER", "evidence": "Financial audit links Tariq Falcon to Apex Bullion Exports."},
-                {"src": 6, "tgt": 7, "type": "TRANSFERS_TO", "evidence": "Rs. 3.85 Cr wired from Apex Bullion to HDFC-8899-3321."}
-            ]
-
-            for rd in rels_data:
-                r = Relationship(
-                    case_id=1,
-                    source_entity_id=rd["src"],
-                    target_entity_id=rd["tgt"],
-                    relationship_type=rd["type"],
-                    evidence_sentence=rd["evidence"],
-                    confidence_score=0.90,
-                    verification_status="verified"
-                )
-                db.add(r)
-            db.commit()
-
-            # Seed Locations
-            locs_data = [
-                {"label": "Kucha Mahajani Gold Vault", "lat": 18.9515, "lng": 72.8310, "type": "SAFE_HOUSE"},
-                {"label": "JNPT Port Terminal 3", "lat": 18.9500, "lng": 72.9500, "type": "DOCK_PORT"},
-                {"label": "DND Flyway ANPR Checkpoint", "lat": 19.0178, "lng": 72.8478, "type": "ANPR_CHECKPOINT"}
-            ]
-            for ld in locs_data:
-                loc = Location(
-                    case_id=1,
-                    label=ld["label"],
-                    latitude=ld["lat"],
-                    longitude=ld["lng"],
-                    location_type=ld["type"],
-                    verification_status="verified"
-                )
-                db.add(loc)
-            db.commit()
-
-            print("[CIPHER DB INIT] Baseline case and entities successfully seeded.")
-        else:
-            print("[CIPHER DB INIT] Database already contains cases. Skipping seed.")
+            # Sync to Neo4j if available
+            if neo4j_service.is_available():
+                print("[CIPHER] Syncing seed data to Neo4j...")
+                neo4j_service.sync_case(1, sample_case.title, sample_case.description)
+                for e in entities_data:
+                    neo4j_service.sync_entity(1, e)
+                for r in relationships_data:
+                    neo4j_service.sync_relationship(1, {
+                        "id": r["id"],
+                        "source_id": r["source_id"],
+                        "target_id": r["target_id"],
+                        "relationship_type": r["type"],
+                        "confidence": r["confidence"],
+                        "status": "verified",
+                        "evidence_sentence": r["sentence"]
+                    })
+                print("[CIPHER] Neo4j sync complete.")
 
     except Exception as e:
-        print(f"[CIPHER DB INIT ERROR] {e}")
+        print(f"[CIPHER] Initialization error: {e}")
         db.rollback()
     finally:
         db.close()
 
 if __name__ == "__main__":
-    init_db()
+    init_database()

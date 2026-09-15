@@ -276,6 +276,7 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
+const uploadSingle = upload.single("file") as any;
 
 // ============================================================
 // AUTH HELPERS
@@ -596,7 +597,7 @@ async function startServer() {
   // ------------------------------------------------------------
   // DOCUMENTS MANAGEMENT ROUTES
   // ------------------------------------------------------------
-  app.post(["/cases/:case_id/documents", "/api/cases/:case_id/documents"], authenticateToken, upload.single("file"), (req, res) => {
+  app.post(["/cases/:case_id/documents", "/api/cases/:case_id/documents"], authenticateToken, uploadSingle, (req, res) => {
     const caseId = Number(req.params.case_id);
     const c = db.prepare("SELECT * FROM cases WHERE id = ?").get(caseId);
     if (!c) {
@@ -1188,7 +1189,7 @@ Hawala Conduit Acct #4418,account,Settlement Acct,,,Farhan Merchant,TRANSFERS_TO
   app.post(
     ["/cases/:case_id/import-csv", "/api/cases/:case_id/import-csv"],
     authenticateToken,
-    upload.single("file"),
+    uploadSingle,
     (req, res) => {
       const caseId = Number(req.params.case_id);
       const caseRow = db.prepare("SELECT * FROM cases WHERE id = ?").get(caseId);
