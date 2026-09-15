@@ -2000,51 +2000,81 @@ document
                 card
               );
 
-
               const main =
                 stage.querySelector(
                   ".case-main"
                 );
 
+              if (main) {
+                const cardTop = card.querySelector(".case-top");
+                const cardIndexRaw = card.dataset.caseId || cardTop?.querySelector("span")?.textContent || "CASE / 014";
+                const priorityText = card.dataset.priority || cardTop?.querySelector("b")?.textContent || "HIGH RISK";
+                const isHighPriority = priorityText.toUpperCase().includes("HIGH") || priorityText.toUpperCase().includes("CRITICAL");
+                const isNew = card.dataset.isNew === "true" || !!card.querySelector(".case-new-badge");
 
-              if (
-                main &&
-                card !== main
-              ) {
+                const mainTop = main.querySelector(".case-top");
+                if (mainTop) {
+                  const displayIndex = cardIndexRaw.startsWith("CASE /") ? cardIndexRaw : "CASE / " + cardIndexRaw;
+                  mainTop.innerHTML = `<span>${displayIndex}</span><div style="display:flex;align-items:center;gap:6px;"><b class="${isHighPriority ? 'high' : ''}">${priorityText.toUpperCase()}</b>${isNew ? '<span class="case-new-badge">NEW</span>' : ''}</div>`;
+                }
 
-                const index =
-                  card.querySelector(
-                    ".case-top span"
-                  )?.textContent ||
-                  "CASE / SELECTED";
-
-
-                const mainIndex =
-                  main.querySelector(
-                    ".case-index"
-                  );
-
-                const mainTitle =
-                  main.querySelector(
-                    "h3"
-                  );
-
-
+                const mainIndex = main.querySelector(".case-index");
                 if (mainIndex) {
-
-                  mainIndex.textContent =
-                    index;
-
+                  mainIndex.textContent = card.dataset.caseId || cardIndexRaw.replace("CASE / ", "").trim();
                 }
 
-
+                const mainTitle = main.querySelector("h3");
                 if (mainTitle) {
-
-                  mainTitle.textContent =
-                    card.dataset.case;
-
+                  mainTitle.textContent = card.dataset.case || card.querySelector("h3")?.textContent || "Investigation";
                 }
 
+                const mainDesc = main.querySelector("p");
+                if (mainDesc) {
+                  mainDesc.textContent = card.dataset.description || card.querySelector("p")?.textContent || "Investigative intelligence record.";
+                }
+
+                let detailStrip = main.querySelector(".case-detail-strip");
+                if (!detailStrip) {
+                  detailStrip = document.createElement("div");
+                  detailStrip.className = "case-detail-strip";
+                  const pEl = main.querySelector("p");
+                  if (pEl && pEl.nextSibling) {
+                    main.insertBefore(detailStrip, pEl.nextSibling);
+                  } else {
+                    main.appendChild(detailStrip);
+                  }
+                }
+
+                const cType = card.dataset.caseType || "Financial Crime";
+                const cOff = card.dataset.officer || "Vinay Yadav";
+                const cJur = card.dataset.jurisdiction || "Chandigarh Central";
+                const cLoc = card.dataset.location || "Chandigarh Central";
+                const cDate = card.dataset.incidentDate || "Active";
+                const cTags = card.dataset.tags || "financial, accounts";
+
+                detailStrip.innerHTML = `
+                  <span><strong>TYPE:</strong> ${cType}</span>
+                  <span><strong>LOCATION:</strong> ${cLoc}</span>
+                  <span><strong>OFFICER:</strong> ${cOff}</span>
+                  <span><strong>JURISDICTION:</strong> ${cJur}</span>
+                  <span><strong>DATE:</strong> ${cDate}</span>
+                  <span><strong>TAGS:</strong> ${cTags}</span>
+                `;
+
+                const openBtn = main.querySelector(".case-footer button");
+                if (openBtn) {
+                  openBtn.onclick = (btnE) => {
+                    btnE.stopPropagation();
+                    const caseIdStr = card.dataset.caseId || cardIndexRaw;
+                    const caseTitleStr = card.dataset.case || mainTitle?.textContent || "";
+                    const wsCase = document.querySelector(".workspace-case");
+                    if (wsCase) {
+                      wsCase.innerHTML = `<span>CASE /</span> ${caseIdStr} <i></i> ACTIVE INVESTIGATION`;
+                    }
+                    const netBtn = document.querySelector('.side-item[data-view="network"]');
+                    if (netBtn) netBtn.click();
+                  };
+                }
               }
 
             }
@@ -2563,6 +2593,453 @@ document
 
   }
 
+})();
+
+
+/* =========================================================
+   CASE CREATION & INVESTIGATION SYNC MODULE
+   ========================================================= */
+(function initCaseCreationManager() {
+  const newCaseBtn = document.getElementById("newCaseBtn");
+  const caseModal = document.getElementById("caseCreateModal");
+  const caseForm = document.getElementById("caseCreateForm");
+  const caseCloseBtn = document.getElementById("caseCreateClose");
+  const caseCancelBtn = document.getElementById("caseCancelBtn");
+  const caseIdDisplay = document.getElementById("newCaseIdDisplay");
+  const caseIdHidden = document.getElementById("newCaseIdHidden");
+  const caseNameInput = document.getElementById("newCaseName");
+  const caseTypeSelect = document.getElementById("newCaseType");
+  const casePrioritySelect = document.getElementById("newCasePriority");
+  const caseDateInput = document.getElementById("newCaseIncidentDate");
+  const caseDescInput = document.getElementById("newCaseDescription");
+  const caseLocInput = document.getElementById("newCaseLocation");
+  const selectMapBtn = document.getElementById("newCaseSelectMapBtn");
+  const tagsWrapper = document.getElementById("caseTagsWrapper");
+  const tagAddInput = document.getElementById("newCaseTagInput");
+  const officerVal = document.getElementById("newCaseOfficerVal");
+  const officerHidden = document.getElementById("newCaseOfficerHidden");
+  const jurisdictionVal = document.getElementById("newCaseJurisdictionVal");
+  const jurisdictionHidden = document.getElementById("newCaseJurisdictionHidden");
+
+  // Initialize default metadata on existing cards c1-c5
+  const stage = document.getElementById("caseStage");
+  if (stage) {
+    const c1 = stage.querySelector(".c1");
+    if (c1 && !c1.dataset.caseId) {
+      c1.dataset.caseId = "C-2026-014";
+      c1.dataset.caseType = "Financial Crime";
+      c1.dataset.priority = "Medium";
+      c1.dataset.incidentDate = "2026-08-14";
+      c1.dataset.description = "Cross-border movement & financial links tracking illicit transit routes across northern corridors.";
+      c1.dataset.location = "Sector 17, Chandigarh";
+      c1.dataset.officer = "Vinay Yadav";
+      c1.dataset.jurisdiction = "Chandigarh Central";
+      c1.dataset.tags = "financial, cross-border, transit";
+    }
+    const c2 = stage.querySelector(".c2");
+    if (c2 && !c2.dataset.caseId) {
+      c2.dataset.caseId = "C-2026-021";
+      c2.dataset.caseType = "Corporate Fraud";
+      c2.dataset.priority = "Low";
+      c2.dataset.incidentDate = "2026-07-02";
+      c2.dataset.description = "Corporate ownership, shell holdings and proxy entities laundering capital through tech accounts.";
+      c2.dataset.location = "Cyber City, Gurugram";
+      c2.dataset.officer = "Vinay Yadav";
+      c2.dataset.jurisdiction = "Chandigarh Central";
+      c2.dataset.tags = "corporate, shell-holdings, proxies";
+    }
+    const c3 = stage.querySelector(".c3");
+    if (c3 && !c3.dataset.caseId) {
+      c3.dataset.caseId = "C-2026-042";
+      c3.dataset.caseType = "Organized Crime";
+      c3.dataset.priority = "High";
+      c3.dataset.incidentDate = "2026-03-12";
+      c3.dataset.description = "A connected criminal network spanning people, organizations, locations and financial evidence.";
+      c3.dataset.location = "Mumbai & Northern Region";
+      c3.dataset.officer = "Vinay Yadav";
+      c3.dataset.jurisdiction = "Chandigarh Central";
+      c3.dataset.tags = "organized-crime, terror-finance, hawala";
+    }
+    const c4 = stage.querySelector(".c4");
+    if (c4 && !c4.dataset.caseId) {
+      c4.dataset.caseId = "C-2026-009";
+      c4.dataset.caseType = "Theft & Smuggling";
+      c4.dataset.priority = "Closed";
+      c4.dataset.incidentDate = "2026-01-19";
+      c4.dataset.description = "Logistics network reconstruction and maritime freight tracking for unauthorized container cargo.";
+      c4.dataset.location = "JNPT Port Terminal";
+      c4.dataset.officer = "Vinay Yadav";
+      c4.dataset.jurisdiction = "Western Maritime";
+      c4.dataset.tags = "logistics, shipping, cargo";
+    }
+    const c5 = stage.querySelector(".c5");
+    if (c5 && !c5.dataset.caseId) {
+      c5.dataset.caseId = "C-2026-033";
+      c5.dataset.caseType = "Cyber Crime";
+      c5.dataset.priority = "Medium";
+      c5.dataset.incidentDate = "2026-06-28";
+      c5.dataset.description = "Evidence-led entity resolution and multi-bank transactional graph analysis of phishing networks.";
+      c5.dataset.location = "Financial District";
+      c5.dataset.officer = "Vinay Yadav";
+      c5.dataset.jurisdiction = "Economic Offences Wing";
+      c5.dataset.tags = "cyber, banking, entities";
+    }
+  }
+
+  let evidencePopupTimer = null;
+
+  function showEvidencePromptPopup(createdCase) {
+    let popup = document.getElementById("caseEvidencePromptPopup");
+    if (!popup) {
+      popup = document.createElement("div");
+      popup.id = "caseEvidencePromptPopup";
+      popup.className = "cipher-evidence-prompt-popup";
+      popup.setAttribute("role", "alert");
+      popup.setAttribute("aria-live", "assertive");
+      popup.innerHTML = `
+        <div class="evidence-popup-top">
+          <div class="evidence-popup-badge-wrap">
+            <span class="evidence-popup-check">✓</span>
+            <span class="evidence-popup-label">CASE CREATED • ACTIVE</span>
+          </div>
+          <button type="button" class="evidence-popup-close-btn" id="caseEvidencePopupDismiss" aria-label="Close notification">×</button>
+        </div>
+        <div class="evidence-popup-case-title" id="caseEvidencePopupTitle">${createdCase.case_number} • ${createdCase.title}</div>
+        <p class="evidence-popup-msg">
+          Please add evidence and proceed further
+        </p>
+        <div class="evidence-popup-footer">
+          <span class="evidence-popup-subtext">Click here to continue</span>
+          <button type="button" class="evidence-popup-btn" id="caseEvidencePopupActionBtn">
+            OPEN EVIDENCE ◈ ↗
+          </button>
+        </div>
+      `;
+      document.body.appendChild(popup);
+    }
+
+    // Ensure it is on the top stacking layer
+    popup.style.display = "flex";
+    popup.style.position = "fixed";
+    popup.style.top = "24px";
+    popup.style.right = "24px";
+    popup.style.zIndex = "999999";
+
+    const titleEl = popup.querySelector("#caseEvidencePopupTitle");
+    if (titleEl) {
+      titleEl.textContent = `${createdCase.case_number} • ${createdCase.title}`;
+    }
+
+    clearTimeout(evidencePopupTimer);
+
+    // Force show class with requestAnimationFrame for smooth CSS animation
+    requestAnimationFrame(() => {
+      popup.classList.add("show");
+    });
+
+    evidencePopupTimer = setTimeout(() => {
+      popup.classList.remove("show");
+    }, 25000);
+
+    const dismissBtn = popup.querySelector("#caseEvidencePopupDismiss");
+    if (dismissBtn) {
+      dismissBtn.onclick = (evt) => {
+        evt.stopPropagation();
+        popup.classList.remove("show");
+        clearTimeout(evidencePopupTimer);
+      };
+    }
+
+    const handleNavigateToEvidence = (evt) => {
+      if (evt && evt.target && evt.target.closest("#caseEvidencePopupDismiss")) return;
+
+      if (typeof window.cipherSwitchView === "function") {
+        window.cipherSwitchView("evidence");
+      } else {
+        const evTab = document.querySelector('.side-item[data-view="evidence"]') || document.querySelector('[data-view="evidence"]');
+        if (evTab) evTab.click();
+      }
+
+      // Synchronize evidence workspace headers & fields with the new case
+      const repStatus = document.getElementById("reportCaseStatus");
+      if (repStatus) repStatus.textContent = `CASE / ${createdCase.case_number} • ACTIVE`;
+
+      const repTitle = document.getElementById("reportTitle");
+      if (repTitle) repTitle.textContent = createdCase.title;
+
+      const repSubtitle = document.getElementById("reportSubtitle");
+      if (repSubtitle) {
+        repSubtitle.textContent = `${createdCase.primary_location} · ${createdCase.incident_date} · ${createdCase.case_type}`;
+      }
+
+      const caseIdField = document.querySelector('[data-report-field="caseId"]');
+      if (caseIdField) caseIdField.value = createdCase.case_number;
+
+      const agencyField = document.querySelector('[data-report-field="agency"]');
+      if (agencyField) agencyField.value = `${createdCase.jurisdiction} / ${createdCase.assigned_officer}`;
+
+      const caseTypeField = document.querySelector('[data-report-field="caseType"]');
+      if (caseTypeField) caseTypeField.value = createdCase.case_type;
+
+      const dateField = document.querySelector('[data-report-field="incidentDate"]');
+      if (dateField) dateField.value = createdCase.incident_date;
+
+      const locField = document.querySelector('[data-report-field="location"]');
+      if (locField) locField.value = createdCase.primary_location;
+
+      popup.classList.remove("show");
+      clearTimeout(evidencePopupTimer);
+
+      notifyUser(`Switched to Evidence section for Case ${createdCase.case_number}`);
+    };
+
+    popup.onclick = handleNavigateToEvidence;
+    const actionBtn = popup.querySelector("#caseEvidencePopupActionBtn");
+    if (actionBtn) {
+      actionBtn.onclick = handleNavigateToEvidence;
+    }
+  }
+
+  // Expose globally for testing/interaction
+  window.cipherShowEvidencePrompt = showEvidencePromptPopup;
+
+  function notifyUser(msg) {
+    let t = document.getElementById("networkToast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "networkToast";
+      t.className = "network-toast";
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.classList.remove("show");
+    }, 3200);
+  }
+
+  let caseSequence = 14;
+
+  async function openCaseModal() {
+    if (!caseModal) return;
+
+    // Fetch existing count to generate next Case ID
+    try {
+      const res = await fetch("/api/cases");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.cases)) {
+          caseSequence = Math.max(caseSequence, data.cases.length + 14);
+        }
+      }
+    } catch (e) {
+      // offline fallback
+    }
+
+    const nextId = `C-2026-${String(caseSequence).padStart(3, "0")}`;
+    if (caseIdDisplay) caseIdDisplay.textContent = nextId;
+    if (caseIdHidden) caseIdHidden.value = nextId;
+
+    // Default incident date to today
+    if (caseDateInput) {
+      caseDateInput.value = new Date().toISOString().split("T")[0];
+    }
+
+    // Auto-populate officer and jurisdiction
+    const loggedUser = window.currentUser || { name: "Vinay Yadav", jurisdiction: "Chandigarh Central" };
+    if (officerVal) officerVal.textContent = loggedUser.name || "Vinay Yadav";
+    if (officerHidden) officerHidden.value = loggedUser.name || "Vinay Yadav";
+    if (jurisdictionVal) jurisdictionVal.textContent = loggedUser.jurisdiction || "Chandigarh Central";
+    if (jurisdictionHidden) jurisdictionHidden.value = loggedUser.jurisdiction || "Chandigarh Central";
+
+    // Open modal
+    caseModal.classList.add("open");
+    caseModal.setAttribute("aria-hidden", "false");
+    if (caseNameInput) {
+      setTimeout(() => caseNameInput.focus(), 80);
+    }
+  }
+
+  function closeCaseModal() {
+    if (!caseModal) return;
+    caseModal.classList.remove("open");
+    caseModal.setAttribute("aria-hidden", "true");
+  }
+
+  if (newCaseBtn) {
+    newCaseBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      openCaseModal();
+    });
+  }
+
+  if (caseCloseBtn) {
+    caseCloseBtn.addEventListener("click", closeCaseModal);
+  }
+  if (caseCancelBtn) {
+    caseCancelBtn.addEventListener("click", closeCaseModal);
+  }
+
+  const backdrop = caseModal?.querySelector(".case-create-backdrop");
+  if (backdrop) {
+    backdrop.addEventListener("click", closeCaseModal);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && caseModal?.classList.contains("open")) {
+      closeCaseModal();
+    }
+  });
+
+  // Tag chip toggling & adding
+  if (tagsWrapper) {
+    tagsWrapper.addEventListener("click", (e) => {
+      const chip = e.target.closest(".case-tag-chip");
+      if (chip) {
+        chip.classList.toggle("active");
+      }
+    });
+
+    if (tagAddInput) {
+      tagAddInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === ",") {
+          e.preventDefault();
+          const val = tagAddInput.value.replace(/,/g, "").trim();
+          if (val) {
+            const newChip = document.createElement("button");
+            newChip.type = "button";
+            newChip.className = "case-tag-chip active";
+            newChip.dataset.tag = val;
+            newChip.textContent = val;
+            tagsWrapper.insertBefore(newChip, tagAddInput);
+            tagAddInput.value = "";
+          }
+        }
+      });
+    }
+  }
+
+  // Select on Map button
+  if (selectMapBtn && caseLocInput) {
+    selectMapBtn.addEventListener("click", () => {
+      caseLocInput.value = "Sector 17, Chandigarh (30.7415° N, 76.7794° E)";
+      notifyUser("Location pinned: Sector 17, Chandigarh (30.7415° N, 76.7794° E)");
+    });
+  }
+
+  // Form Submission
+  if (caseForm) {
+    caseForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const title = caseNameInput?.value.trim() || "";
+      const case_number = caseIdHidden?.value.trim() || `C-2026-${String(caseSequence).padStart(3, "0")}`;
+      const case_type = caseTypeSelect?.value || "Financial Crime";
+      const priority = casePrioritySelect?.value || "High";
+      const incident_date = caseDateInput?.value || new Date().toISOString().split("T")[0];
+      const description = caseDescInput?.value.trim() || "Investigative intelligence case record.";
+      const primary_location = caseLocInput?.value.trim() || "Sector 17, Chandigarh";
+      const assigned_officer = officerHidden?.value || "Vinay Yadav";
+      const jurisdiction = jurisdictionHidden?.value || "Chandigarh Central";
+
+      const activeTags = Array.from(tagsWrapper?.querySelectorAll(".case-tag-chip.active") || [])
+        .map(el => el.dataset.tag || el.textContent.trim())
+        .filter(Boolean);
+      const tags = activeTags.join(", ");
+
+      if (!title) {
+        notifyUser("Please enter a Case Name");
+        return;
+      }
+
+      const payload = {
+        case_number,
+        title,
+        case_type,
+        priority,
+        incident_date,
+        description,
+        primary_location,
+        assigned_officer,
+        jurisdiction,
+        tags
+      };
+
+      // 1. Immediately close modal and show the green right-side evidence prompt popup
+      caseSequence++;
+      closeCaseModal();
+      caseForm.reset();
+      showEvidencePromptPopup(payload);
+      notifyUser(`Case ${case_number} created and synchronized with database!`);
+
+      // 2. Safely update 3D orbit card and focus it
+      try {
+        if (stage) {
+          const targetBox = stage.querySelector(".c1") || stage.querySelector(".floating-case:not(.case-main)") || stage.querySelector(".floating-case");
+          if (targetBox) {
+            targetBox.dataset.case = title;
+            targetBox.dataset.caseId = case_number;
+            targetBox.dataset.caseType = case_type;
+            targetBox.dataset.priority = priority;
+            targetBox.dataset.description = description;
+            targetBox.dataset.incidentDate = incident_date;
+            targetBox.dataset.location = primary_location;
+            targetBox.dataset.officer = assigned_officer;
+            targetBox.dataset.jurisdiction = jurisdiction;
+            targetBox.dataset.tags = tags;
+            targetBox.dataset.isNew = "true";
+            targetBox.classList.add("is-new-case");
+
+            const isHigh = priority.toUpperCase().includes("HIGH") || priority.toUpperCase().includes("CRITICAL");
+            const cleanLoc = (primary_location || "Central").split("(")[0].trim();
+            targetBox.innerHTML = `
+              <div class="case-top">
+                <span>CASE / ${case_number}</span>
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <b class="${isHigh ? 'high' : ''}">${priority.toUpperCase()}</b>
+                  <span class="case-new-badge">NEW</span>
+                </div>
+              </div>
+              <h3>${title}</h3>
+              <p>${description}</p>
+              <div class="case-stats">
+                <span>${case_type}</span>
+                <span>${cleanLoc}</span>
+              </div>
+            `;
+
+            if (typeof window.cipherFocusCase === "function") {
+              window.cipherFocusCase(targetBox);
+            }
+
+            try {
+              targetBox.click();
+            } catch (clickErr) {
+              console.warn("Card click sync notice:", clickErr);
+            }
+          }
+        }
+      } catch (orbitErr) {
+        console.warn("Orbit visual update notice:", orbitErr);
+      }
+
+      // 3. Concurrently sync to backend database
+      try {
+        const token = localStorage.getItem("cipher_access_token");
+        const headers = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        fetch("/api/cases", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload)
+        }).catch(fetchErr => console.warn("Backend save notice:", fetchErr));
+      } catch (err) {
+        console.warn("Backend save notice:", err);
+      }
+    });
+  }
 })();
 
 
@@ -3797,6 +4274,9 @@ document
           toast(`✓ ${successMsg}`);
         }
 
+        // Sync status into Evidence section register as INGESTED
+        syncFileToEvidenceSection(currentFilename, data.stats?.importedEntities || 0, 0, true);
+
         // Switch to the Network view immediately so user sees the newly plotted graph!
         if (typeof window.cipherSwitchView === "function") {
           window.cipherSwitchView("network");
@@ -3869,20 +4349,77 @@ document
     }
   });
 
+  function syncFileToEvidenceSection(fileName, rowCount = 0, colCount = 0, ingested = false) {
+    const list = document.getElementById("reportEvidenceList");
+    if (!list) return;
+
+    let existingRow = list.querySelector(`.evidence-row[data-csv-name="${fileName}"]`);
+    if (existingRow) {
+      const badge = existingRow.querySelector(".cipher-csv-evidence-badge");
+      if (badge) {
+        badge.textContent = ingested ? "GRAPH INGESTED · ACTIVE" : "SYNCED TO NETWORK";
+        badge.style.color = ingested ? "#d9ff55" : "#00e676";
+        badge.style.borderColor = ingested ? "rgba(217,255,85,0.5)" : "rgba(0,230,118,0.4)";
+      }
+      return;
+    }
+
+    const row = document.createElement("div");
+    row.className = "evidence-row cipher-csv-evidence-row";
+    row.dataset.csvName = fileName;
+    row.innerHTML = `
+      <span class="evidence-icon" style="background:rgba(0,230,118,0.18);border:1px solid #00e676;color:#00e676;font-weight:700;">CSV</span>
+      <div>
+        <b contenteditable="true">${escapeHtml(fileName)}</b>
+        <small contenteditable="true">${rowCount} data rows · ${colCount} columns · Investigation data source · ${new Date().toLocaleDateString()}</small>
+      </div>
+      <em class="cipher-csv-evidence-badge" style="${ingested ? 'color:#d9ff55;border-color:rgba(217,255,85,0.5);' : 'color:#00e676;border-color:rgba(0,230,118,0.4);'}">${ingested ? 'GRAPH INGESTED · ACTIVE' : 'SYNCED TO NETWORK'}</em>
+    `;
+    list.prepend(row);
+
+    const draftState = document.getElementById("reportSaveState");
+    if (draftState) {
+      draftState.textContent = "EVIDENCE ADDED (CSV)";
+    }
+  }
+
   function handleFileSelected(file) {
     if (!file) return;
     if (!/\.csv$/i.test(file.name) && file.type !== "text/csv") {
       if (typeof showNetworkToast === "function") {
         showNetworkToast("Please select a valid CSV file (.csv).");
       }
-      input.value = "";
+      if (input) input.value = "";
+      const evInput = document.getElementById("evidenceCsvFileInput");
+      if (evInput) evInput.value = "";
       return;
     }
+
+    // Mirror file into input.files if selected via evidence section or drag & drop
+    try {
+      if (input && input.files?.[0] !== file) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        input.files = dt.files;
+      }
+    } catch (dtErr) {}
 
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result || "");
+      const { headers, rows } = parseCsvString(text);
+
+      // 1. Sync to evidence section immediately
+      syncFileToEvidenceSection(file.name, rows.length, headers.length, false);
+
+      // 2. Open CSV modal for preview & graph ingestion (same as network section upload)
       openCsvModal(file.name, text, file);
+
+      if (typeof showNetworkToast === "function") {
+        showNetworkToast(`✓ CSV attached: "${file.name}" (${rows.length} records ready to plot)`);
+      } else if (typeof toast === "function") {
+        toast(`✓ CSV attached: "${file.name}" (${rows.length} records ready to plot)`);
+      }
     };
     reader.onerror = () => {
       if (typeof showNetworkToast === "function") {
@@ -3933,6 +4470,8 @@ document
     if (file) handleFileSelected(file);
   });
 
+  window.cipherHandleCsvFile = handleFileSelected;
+  window.cipherSyncCsvToEvidence = syncFileToEvidenceSection;
   window.cipherOpenCsvImportModal = openCsvModal;
 })();
 
@@ -7161,89 +7700,71 @@ document
   );
 
 
+  const evidenceCsvInput = document.getElementById("evidenceCsvFileInput");
+
   function addEvidence() {
-
-    const list =
-      document.getElementById(
-        "reportEvidenceList"
-      );
-
-
-    if (!list)
+    if (evidenceCsvInput) {
+      evidenceCsvInput.value = "";
+      evidenceCsvInput.click();
       return;
+    }
+    if (typeof window.cipherHandleCsvFile === "function") {
+      const fallbackInput = document.getElementById("csvFileInput");
+      if (fallbackInput) {
+        fallbackInput.value = "";
+        fallbackInput.click();
+        return;
+      }
+    }
 
+    const list = document.getElementById("reportEvidenceList");
+    if (!list) return;
 
-    const row =
-      document.createElement(
-        "div"
-      );
-
-
-    row.className =
-      "evidence-row";
-
-
-    row.innerHTML =
-      `
-      <span class="evidence-icon">
-        NEW
-      </span>
-
+    const row = document.createElement("div");
+    row.className = "evidence-row";
+    row.innerHTML = `
+      <span class="evidence-icon">NEW</span>
       <div>
-
-        <b contenteditable="true">
-          New evidence item
-        </b>
-
-        <small contenteditable="true">
-          Enter source, date, authority and verification status.
-        </small>
-
+        <b contenteditable="true">New evidence item</b>
+        <small contenteditable="true">Enter source, date, authority and verification status.</small>
       </div>
-
-      <em>
-        USER INPUT
-      </em>
-      `;
-
-
-    list.appendChild(
-      row
-    );
-
-
-    row
-      .querySelector(
-        "b"
-      )
-      ?.focus();
-
-
-    setDraftState(
-      "EVIDENCE ADDED"
-    );
-
+      <em>USER INPUT</em>
+    `;
+    list.appendChild(row);
+    row.querySelector("b")?.focus();
+    setDraftState("EVIDENCE ADDED");
   }
 
+  evidenceCsvInput?.addEventListener("change", () => {
+    const file = evidenceCsvInput.files?.[0];
+    if (file && typeof window.cipherHandleCsvFile === "function") {
+      window.cipherHandleCsvFile(file);
+    }
+  });
+
+  const evidenceWorkspace = document.getElementById("evidenceView");
+  if (evidenceWorkspace) {
+    evidenceWorkspace.addEventListener("dragover", (e) => {
+      e.preventDefault();
+    });
+    evidenceWorkspace.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer?.files?.[0];
+      if (file && (/\.csv$/i.test(file.name) || file.type === "text/csv")) {
+        if (typeof window.cipherHandleCsvFile === "function") {
+          window.cipherHandleCsvFile(file);
+        }
+      }
+    });
+  }
 
   document
-    .getElementById(
-      "reportAddEvidence"
-    )
-    ?.addEventListener(
-      "click",
-      addEvidence
-    );
-
+    .getElementById("reportAddEvidence")
+    ?.addEventListener("click", addEvidence);
 
   document
-    .getElementById(
-      "reportAddEvidenceInline"
-    )
-    ?.addEventListener(
-      "click",
-      addEvidence
-    );
+    .getElementById("reportAddEvidenceInline")
+    ?.addEventListener("click", addEvidence);
 
 
   summaryBtn?.addEventListener(

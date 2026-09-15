@@ -513,28 +513,58 @@ async function startServer() {
   // CASES MANAGEMENT ROUTES
   // ------------------------------------------------------------
   app.post(["/cases", "/api/cases"], authenticateToken, requireRole(["INVESTIGATOR", "ANALYST", "SUPERVISOR", "ADMIN"]), (req, res) => {
-    const { case_number, title, description, priority } = req.body;
-    const casePriority = priority || "MEDIUM";
+    let { case_number, title, description, priority, case_type, incident_date, primary_location, assigned_officer, jurisdiction, tags } = req.body;
+    
+    // Also support camelCase variations
+    case_number = case_number || req.body.caseNumber || req.body.caseId || req.body.case_id;
+    case_type = case_type || req.body.caseType;
+    incident_date = incident_date || req.body.incidentDate;
+    primary_location = primary_location || req.body.primaryLocation;
+    assigned_officer = assigned_officer || req.body.assignedOfficer || "Vinay Yadav";
+    jurisdiction = jurisdiction || req.body.jurisdiction || "Chandigarh Central";
+    if (Array.isArray(tags)) tags = tags.join(", ");
+    tags = tags || req.body.tags;
+
+    if (!case_number) {
+      const countRes = db.prepare("SELECT COUNT(*) as count FROM cases").get() as { count: number };
+      const nextNum = (countRes?.count || 0) + 14;
+      case_number = `C-2026-${String(nextNum).padStart(3, "0")}`;
+    }
+
+    const normPriority = (priority || "MEDIUM").toUpperCase();
     const validPriorities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
-    if (!validPriorities.includes(casePriority)) {
+    if (!validPriorities.includes(normPriority)) {
       return res.status(400).json({ detail: "Invalid priority" });
     }
 
-    if (!case_number || !title) {
-      return res.status(400).json({ detail: "Case number and title are required" });
+    if (!title) {
+      return res.status(400).json({ detail: "Case title is required" });
     }
 
     const existing = db.prepare("SELECT * FROM cases WHERE case_number = ?").get(case_number);
     if (existing) {
-      return res.status(400).json({ detail: "Case number already exists" });
+      // If same case number exists, generate unique suffix
+      case_number = `${case_number}-${Date.now().toString().slice(-4)}`;
     }
 
     const user = (req as any).user;
     const result = db.prepare(`
-      INSERT INTO cases (case_number, title, description, priority, status, created_by)
-      VALUES (?, ?, ?, ?, 'OPEN', ?)
-    `).run(case_number, title, description || null, casePriority, user.id || 1);
+      INSERT INTO cases (case_number, title, description, priority, status, created_by, case_type, incident_date, primary_location, assigned_officer, jurisdiction, tags)
+      VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      case_number,
+      title,
+      description || null,
+      normPriority,
+      user?.id || 1,
+      case_type || "Financial Crime",
+      incident_date || null,
+      primary_location || "Chandigarh Central",
+      assigned_officer || "Vinay Yadav",
+      jurisdiction || "Chandigarh Central",
+      tags || null
+    );
 
     const newId = Number(result.lastInsertRowid);
     const newCase = db.prepare("SELECT * FROM cases WHERE id = ?").get(newId) as any;
